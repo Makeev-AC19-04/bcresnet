@@ -1,25 +1,11 @@
 # Broadcasted Residual Learning for Efficient Keyword Spotting.
-This repository contains the implementation for the paper presented in
 
-**Byeonggeun Kim<sup>\*1</sup>, Simyung Chang<sup>\*1</sup>, Jinkyu Lee<sup>1</sup>, Dooyong Sung<sup>1</sup>, "Broadcasted Residual Learning for Efficient Keyword Spotting", Interspeech 2021.** [[ArXiv]](https://arxiv.org/abs/2106.04140)
-
-*Equal contribution
-<sup>1</sup> Qualcomm AI Research (Qualcomm AI Research is an initiative of Qualcomm Technologies, Inc.)
-
-It contains the keyword spotting standard benchmark, [Google speech command datasets v1 and v2](https://arxiv.org/abs/1804.03209).
-
-## Abstract
-![! an image](resources/method.png)
-
-We propose a broadcasted residual learning method for keyword spotting that achieves high accuracy with small model size and computational load, making it well-suited for use on resource-constrained devices such as mobile phones. The method involves configuring most of the residual functions as 1D temporal convolutions while still allowing 2D convolutions via a broadcasted-residual connection that expands the temporal output to the frequency-temporal dimension. This approach enables the network to effectively represent useful audio features with much less computation than conventional convolutional neural networks. We also introduce a novel network architecture called the Broadcasting-residual network (BC-ResNet) that leverages this broadcasted residual learning approach, and we describe how to scale the model according to the target device's resources. BC-ResNets achieve state-of-the-art results, achieving 98.0% and 98.7% top-1 accuracy on Google speech command datasets v1 and v2, respectively. Our approach consistently outperforms previous approaches while using fewer computations and parameters.
-
-## Getting Started
-
+This repository is a fork of a repo by [Tijmen Blankevoort](https://github.com/TiRune) and [Iheujo](https://github.com/lheujo).
+## Getting started
 ### Prerequisites
 This code requires the following:
-* python >= 3.6
-* pytorch >= 1.7.1
-
+- python >= 3.6
+- pytorch >= 1.7.1
 ### Installation
 ```
 conda create -n bcresnet python=3.6
@@ -28,29 +14,58 @@ conda install pytorch==1.7.1 torchvision==0.8.2 torchaudio==0.7.2 -c pytorch
 conda install tqdm, requests
 ```
 
-
 ## Usage
-Here are some examples of how to use the code:
+### Dataset
+Firstly, you have to make directory of a dataset with .vaw files inside `./data` folder. Your `./data` directory should look like this:
+```
+. └── Data/ 
+	└── {KEYWORD}/ 
+		├── {KEYWORD} 
+		├── filler 
+		└── _background_noise_
+```
+You can also have multiple datasets with different keywords like this:
+```
+. └── Data/ 
+├── {KEYWORD1}/ 
+│ ├── {KEYWORD1} 
+│ ├── filler 
+│ └── _background_noise_ 
+├── {KEYWORD2}/ 
+│ ├── {KEYWORD2} 
+│ ├── filler 
+│ └── _background_noise_ 
+├── ... 
+└── {KEYWORD_N}/ 
+	├── {KEYWORD_N} 
+	├── filler 
+	└── _background_noise_
+```
+As an example you can download [this dataset.](https://drive.google.com/file/d/1KH62kZaVzsikGz8_Ve9JRe8hO_H0rRI3/view?usp=drive_link)
+### Constants
+In `constants.py` you can set different parameters:
+- `KEYWORD` - keyword you want do work with. **Important:** value of `KEYWORD` must be the same as the dataset directory name. For example, if you set `KEYWORD = "bed"`, your `./data` directory should look like this:
+```
+. └── Data/ 
+	└── bed/ 
+		├── bed 
+		├── filler 
+		└── _background_noise_
+```
+- `TOTAL_EPOCH` - number of epochs to train model;
+- `WARMUP_EPOCH` - number of warmup epochs;
+- `TRAIN_RATIO` - percentage of files to use for model training;
+- `VAL_RATIO` - percentage of files to use for model validating, `TEST_RATIO` will be calculated as `1 - TRAIN_RATIO - VAL_RATIO`
+### Running code
 
-1. To use BCResNet-8 with GPU 0 and GSC dataset v2, and download the dataset, run the following command:
-```
-python main.py --tau 8 --gpu 0 --ver 2 --download
-```
-2. To use BCResNet-1 with GPU 1 and GSC dataset v1, and skip downloading the dataset, run the following command:
-```
-python main.py --tau 1 --gpu 1 --ver 1
-```
-The downloaded dataset will be saved to the data/ directory by default.
+1. To use BCResNet-8 with GPU 0 and split your dataset, run the following command:
 
-## Reference
-If you find our work useful for your research, please cite the following:
 ```
-@inproceedings{kim21l_interspeech,
-  author={Byeonggeun Kim and Simyung Chang and Jinkyu Lee and Dooyong Sung},
-  title={{Broadcasted Residual Learning for Efficient Keyword Spotting}},
-  year=2021,
-  booktitle={Proc. Interspeech 2021},
-  pages={4538--4542},
-  doi={10.21437/Interspeech.2021-383}
-}
+python main.py --tau 8 --gpu 0 --split_dataset
+```
+
+2. To use BCResNet-1 with GPU 1 and skip splitting dataset (for example, it was done with previous command), run the following command:
+
+```
+python main.py --tau 1 --gpu 1
 ```

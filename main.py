@@ -5,6 +5,8 @@ import os
 from argparse import ArgumentParser
 import shutil
 from glob import glob
+import time
+import psutil
 
 import numpy as np
 import torch
@@ -14,8 +16,10 @@ from torchvision import transforms
 from tqdm import tqdm
 
 from bcresnet import BCResNets
-from utils import DownloadDataset, Padding, Preprocess, SpeechCommand, SplitDataset
+from constants import TOTAL_EPOCH, KEYWORD, TRAIN_RATIO, VAL_RATIO, WARMUP_EPOCH, BATCH_SIZE
+from utils import Padding, Preprocess, SpeechCommand, SplitDataset
 
+DATASET_PATH = f"./data/{KEYWORD}"
 
 class Trainer:
     def __init__(self):
@@ -26,13 +30,10 @@ class Trainer:
         """
         parser = ArgumentParser()
         parser.add_argument(
-            "--ver", default=1, help="google speech command set version 1 or 2", type=int
-        )
-        parser.add_argument(
             "--tau", default=1, help="model size", type=float, choices=[1, 1.5, 2, 3, 6, 8]
         )
         parser.add_argument("--gpu", default=0, help="gpu device id", type=int)
-        parser.add_argument("--download", help="download data", action="store_true")
+        parser.add_argument("--split_dataset", help="split dataset to train, val and test", action="store_true") # Не понял почему тут работает только с store_true, c split_true выдает ошибку
         args = parser.parse_args()
         self.__dict__.update(vars(args))
         self.device = torch.device("cuda:%d" % self.gpu if torch.cuda.is_available() else "cpu")
@@ -46,8 +47,8 @@ class Trainer:
         Trains the model and presents the train/test progress.
         """
         # train hyperparameters
-        total_epoch = 200
-        warmup_epoch = 5
+        total_epoch = TOTAL_EPOCH
+        warmup_epoch = WARMUP_EPOCH
         init_lr = 1e-1
         lr_lower_limit = 0
 
@@ -57,6 +58,7 @@ class Trainer:
         total_iter = len(self.train_loader) * total_epoch
         iterations = 0
 
+        print(len(self.train_loader))
         # train
         for epoch in range(total_epoch):
             self.model.train()
@@ -89,11 +91,31 @@ class Trainer:
             print("cur lr check ... %.4f" % lr)
             with torch.no_grad():
                 self.model.eval()
+
                 valid_acc = self.Test(self.valid_dataset, self.valid_loader, augment=True)
                 print("valid acc: %.3f" % (valid_acc))
 
+        print(f"Test dataset size: {len(self.test_dataset)}")
+        memory_before = psutil.virtual_memory().used
+        start_time = time.time()
+
         test_acc = self.Test(self.test_dataset, self.test_loader, augment=False)  # official testset
+
+        memory_after = psutil.virtual_memory().used
+        end_time = time.time()
+        
+        torch.save(self.model.state_dict(), f'models/{KEYWORD}_model.pth')
+        print(f"model saved at models/{KEYWORD}_model.pth")
         print("test acc: %.3f" % (test_acc))
+
+        execution_time = end_time - start_time
+        memory_used = (memory_after - memory_before)/1024
+        print(f"Execution time: {execution_time:.4f} seconds")
+        print(f"Memory used: {memory_used:.4f} Kb")
+
+        print(f"Average execution time to predict 1 file: {execution_time/len(self.test_dataset):.4f} seconds")
+        print(f"Average memory used to predict 1 file: {memory_used/len(self.test_dataset):.4f} Kb")
+
         print("End.")
 
     def Test(self, dataset, loader, augment):
@@ -126,42 +148,31 @@ class Trainer:
 
         Downloads and splits the data if necessary.
         """
-        print("Check google speech commands dataset v1 or v2 ...")
         if not os.path.isdir("./data"):
             os.mkdir("./data")
-        base_dir = "./data/speech_commands_v0.01"
-        url = "https://storage.googleapis.com/download.tensorflow.org/data/speech_commands_v0.01.tar.gz"
-        url_test = "https://storage.googleapis.com/download.tensorflow.org/data/speech_commands_test_set_v0.01.tar.gz"
-        if self.ver == 2:
-            base_dir = base_dir.replace("v0.01", "v0.02")
-            url = url.replace("v0.01", "v0.02")
-            url_test = url_test.replace("v0.01", "v0.02")
-        test_dir = base_dir.replace("commands", "commands_test_set")
-        if self.download:
-            old_dirs = glob(base_dir.replace("commands_", "commands_*"))
-            for old_dir in old_dirs:
-                shutil.rmtree(old_dir)
-            os.mkdir(test_dir)
-            DownloadDataset(test_dir, url_test)
-            os.mkdir(base_dir)
-            DownloadDataset(base_dir, url)
+        base_dir = DATASET_PATH
+
+        print(str(self.split_dataset))
+
+        if self.split_dataset:
             SplitDataset(base_dir)
-            print("Done...")
 
         # Define data loaders
-        train_dir = "%s/train_12class" % base_dir
-        valid_dir = "%s/valid_12class" % base_dir
+        train_dir = "%s/train" % base_dir
+        valid_dir = "%s/val" % base_dir
+        test_dir = "%s/test" % base_dir
         noise_dir = "%s/_background_noise_" % base_dir
 
         transform = transforms.Compose([Padding()])
-        self.train_dataset = SpeechCommand(train_dir, self.ver, transform=transform)
+        # Read audiofiles and define their's labels
+        self.train_dataset = SpeechCommand(train_dir, transform=transform) 
         self.train_loader = DataLoader(
-            self.train_dataset, batch_size=100, shuffle=True, num_workers=0, drop_last=False
+            self.train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, drop_last=False
         )
-        self.valid_dataset = SpeechCommand(valid_dir, self.ver, transform=transform)
-        self.valid_loader = DataLoader(self.valid_dataset, batch_size=100, num_workers=0)
-        self.test_dataset = SpeechCommand(test_dir, self.ver, transform=transform)
-        self.test_loader = DataLoader(self.test_dataset, batch_size=100, num_workers=0)
+        self.valid_dataset = SpeechCommand(valid_dir, transform=transform)
+        self.valid_loader = DataLoader(self.valid_dataset, batch_size=BATCH_SIZE, num_workers=0)
+        self.test_dataset = SpeechCommand(test_dir, transform=transform)
+        self.test_loader = DataLoader(self.test_dataset, batch_size=BATCH_SIZE, num_workers=0)
 
         print(
             "check num of data train/valid/test %d/%d/%d"
@@ -184,7 +195,7 @@ class Trainer:
         """
         Private method that loads the model into the object.
         """
-        print("model: BC-ResNet-%.1f on data v0.0%d" % (self.tau, self.ver))
+        print("model: BC-ResNet-%.1f" % self.tau)
         self.model = BCResNets(int(self.tau * 8)).to(self.device)
 
 
